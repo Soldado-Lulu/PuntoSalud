@@ -1,0 +1,27 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { ZodError } from 'zod';
+import { UniqueConstraintError, ForeignKeyConstraintError } from 'sequelize';
+import { sequelize } from './config/db.js';
+import router from './routes/index.js';
+const app = express();
+app.disable('x-powered-by');
+app.use(helmet());
+const origins = (process.env.CORS_ORIGINS || '').split(',').map(x => x.trim()).filter(Boolean);
+app.use(cors({ origin(origin, callback) { if (!origin || origins.includes(origin)) return callback(null, true); callback(new Error('Origin not allowed')); } }));
+app.use(express.json({ limit: '100kb' }));
+app.use('/api/v1', rateLimit({ windowMs: 60_000, limit: 120 }), router);
+app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
+app.use((err, _req, res, _next) => {
+  if (err instanceof ZodError) return res.status(400).json({ error: 'Validation error', details: err.flatten() });
+  if (err instanceof UniqueConstraintError) return res.status(409).json({ error: 'Duplicate record' });
+  if (err instanceof ForeignKeyConstraintError) return res.status(400).json({ error: 'Invalid relation' });
+  console.error(err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+const port = Number(process.env.PORT || 3000);
+await sequelize.authenticate();
+app.listen(port, '0.0.0.0', () => console.log(`API listening on ${port}`));

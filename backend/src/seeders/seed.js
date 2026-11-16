@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { sequelize } from '../config/db.js';
-import { CatalogVersion, Medication, Product, Symptom } from '../models/index.js';
+import { CatalogVersion, Medication, Product, Symptom, MedicationSymptom } from '../models/index.js';
 const symptoms = ['Dolor de cabeza', 'Dolor muscular', 'Fiebre', 'Dolor dental'];
 const entries = [
   {
@@ -38,7 +38,17 @@ await sequelize.transaction(async transaction => {
     await Product.create({ medicationId: ibuprofen.id, brandName: 'Ejemplo genérico', composition: 'Ibuprofeno 400 mg por tableta; excipientes varían por fabricante', presentation: 'Tableta', strength: '400 mg', verified: false }, { transaction });
     changed = true;
   }
-  // No associations between antibiotics and symptoms: symptoms alone do not justify an antibiotic.
+  // Los vínculos son etiquetas de búsqueda informativas, NO recomendaciones de uso.
+  // Nunca se asocian automáticamente síntomas inespecíficos con antibióticos.
+  for (const name of symptoms) {
+    const symptom = await Symptom.findOne({ where: { name }, transaction });
+    const [, created] = await MedicationSymptom.findOrCreate({
+      where: { medicationId: ibuprofen.id, symptomId: symptom.id },
+      defaults: { medicationId: ibuprofen.id, symptomId: symptom.id, note: 'Asociación de búsqueda informativa; no constituye prescripción.' }, transaction,
+    });
+    changed ||= created;
+  }
+
   const version = await CatalogVersion.findByPk(1, { transaction });
   if (changed) await version.update({ revision: version.revision + 1, updatedAt: new Date() }, { transaction });
 });

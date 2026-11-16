@@ -5,16 +5,16 @@ export async function bumpRevision(transaction) {
   await CatalogVersion.update({ updatedAt: new Date() }, { where: { id: 1 }, transaction });
 }
 export async function getCatalog() {
-  // Consistent snapshot: the revision and rows belong to one transaction.
   return sequelize.transaction({ isolationLevel: 'REPEATABLE READ', readOnly: true }, async transaction => {
     const version = await CatalogVersion.findByPk(1, { transaction });
-    const [medications, symptoms] = await Promise.all([
-      Medication.findAll({ include: [
-        { model: Product, as: 'products' },
-        { model: Symptom, as: 'symptoms', through: { attributes: ['note'] } },
-      ], order: [['genericName', 'ASC']], transaction }),
-      Symptom.findAll({ order: [['name', 'ASC']], transaction }),
-    ]);
+    const medications = await Medication.findAll({
+      include: [
+        { model: Product, as: 'products', required: false },
+        { model: Symptom, as: 'symptoms', through: { attributes: ['note'] }, required: false },
+      ],
+      order: [['genericName', 'ASC']], transaction,
+    });
+    const symptoms = await Symptom.findAll({ order: [['name', 'ASC']], transaction });
     return { revision: version.revision, updatedAt: version.updatedAt, medications, symptoms };
   });
 }
